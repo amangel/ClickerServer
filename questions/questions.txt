@@ -1,0 +1,3 @@
+hgdhi`/@jdgj`/;`/;SLIDE`/:m`/:0`/:10`/:0`/,SLIDE`/:b`/:0`/:10`/:0`/;`/&srtdd`/;`/;B`/:A`/:0`/,B`/:B`/:0`/,TEXTBOX`/:Text`/:`/,SLIDE`/:Slider`/:0`/:100`/:0`/,TOG`/:C`/:0`/,TOG`/:D`/:0
+Unit 1 - Day 2`/@Question 1`/;`/;TEXTVIEW`/:One kilobyte is equal to`/,B`/:1000 bytes`/:0`/,B`/:1024 bytes`/:0`/,B`/:100 bytes`/:0`/,B`/:1023 bytes`/:0`/;
+Unit 1 - Day 1`/@Question 1`/;`/;TEXTVIEW`/:One kilobyte is equal to`/,B`/:1000 bytes`/:0`/,B`/:1024 bytes`/:0`/,B`/:100 bytes`/:0`/,B`/:1023 bytes`/:0`/;
