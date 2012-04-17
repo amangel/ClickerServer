@@ -11,33 +11,76 @@ import java.util.Map;
 import java.util.Timer;
 import java.util.TimerTask;
 
+// TODO: Auto-generated Javadoc
+/**
+ * The Class PushAdmin.
+ */
 public class PushAdmin {
     
-    private static final int heartbeatTime = 32;
     
-    private final Map<String, Client> clients;
-    private final Map<String, ArrayList<String>> groups;
+    
+    /** The Constant heartbeatTime. 
+     * <br>This is the maximum amount of time that the server will 
+     * wait for an admin to have sent a heartbeat request. If this time 
+     * has elapsed without having recieved a request, the admin is 
+     * considered to have disconnected and the connection will be closed.*/
+    private static final int heartbeatTimeSeconds = 32;
+    
+    /** The map of clients. <br>Maps(Name:String, Client:client)*/
+    private final Map<String, Client> clientMap;
+    
+    /** The map of groups.<br>
+     * Maps group name to an arraylist of the client names in the group */
+    private final Map<String, ArrayList<String>> groupMap;
+    
+    /** The question for everyone. */
     private String questionForEveryone;
+    
+    /** The group questions. */
     private final Map<String, String> groupQuestions;
-    private final String ID;
+    
+    /** The ID. */
+    private final String adminId;
+    
+    /** The admin socket. */
     private Socket adminSocket;
+    
+    /** The in. */
     private BufferedReader in;
+    
+    /** The out. */
     private PrintWriter out;
+    
+    /** The command handler. */
     private CommandHandler commandHandler;
+    
+    /** The displays. */
     private final ArrayList<Display> displays;
+    
+    /** The server. */
     private final PushServer server;
+    
+    /** The timer. */
     private Timer timer;
     
+    /**
+     * Instantiates a new push admin.
+     * 
+     * @param ID
+     *            the iD
+     * @param server
+     *            the server
+     */
     public PushAdmin(final String ID, final PushServer server) {
         // public PushAdmin(String ID, Socket adminSocket, BufferedReader in,
         // PrintWriter out, PushServer server) {
-        this.ID = ID;
+        this.adminId = ID;
         // this.adminSocket = adminSocket;
         // this.in = in;
         // this.out = out;
         this.server = server;
-        clients = Collections.synchronizedMap(new HashMap<String, Client>(50));
-        groups = Collections.synchronizedMap(new HashMap<String, ArrayList<String>>(50));
+        clientMap = Collections.synchronizedMap(new HashMap<String, Client>(50));
+        groupMap = Collections.synchronizedMap(new HashMap<String, ArrayList<String>>(50));
         questionForEveryone = "";
         groupQuestions = Collections.synchronizedMap(new HashMap<String, String>(50));
         displays = new ArrayList<Display>();
@@ -50,29 +93,80 @@ public class PushAdmin {
         // timer.schedule(new PauseTask(), heartbeatTime * 1000);
     }
     
+    /**
+     * Send message.
+     * 
+     * @param message
+     *            the message
+     */
     private void sendMessage(final String message) {
         if (out != null) {
             out.println(message);
+            out.flush();
         }
     }
     
+    /**
+     * Handle response.
+     * 
+     * @param clientID
+     *            the client id
+     * @param response
+     *            the response
+     */
     public void handleResponse(final String clientID, final String response) {
         System.out.println("Client " + clientID + " responsed with " + response);
     }
     
+    /**
+     * Client died.
+     * 
+     * @param clientID
+     *            the client id
+     */
     public void clientDied(final String clientID) {
         System.out.println("Client " + clientID + " has died");
     }
     
+    /**
+     * Display died.
+     * 
+     * @param displayID
+     *            the display id
+     */
     public void displayDied(final int displayID) {
         
     }
     
-    public void adminConnected(final Socket newSocket, final BufferedReader newIn, final PrintWriter newOut) {
-        adminReconnected(newSocket, newIn, newOut);
+    /**
+     * Admin connected.
+     * 
+     * @param newSocket
+     *            the new socket
+     * @param newIn
+     *            the new in
+     * @param newOut
+     *            the new out
+     */
+    public void connectAdmin(final Socket newSocket,
+            final BufferedReader newIn,
+            final PrintWriter newOut) {
+        reconnectAdmin(newSocket, newIn, newOut);
     }
     
-    public void adminReconnected(final Socket newSocket, final BufferedReader newIn, final PrintWriter newOut) {
+    /**
+     * Admin reconnected.
+     * 
+     * @param newSocket
+     *            the new socket
+     * @param newIn
+     *            the new in
+     * @param newOut
+     *            the new out
+     */
+    public void reconnectAdmin(final Socket newSocket,
+            final BufferedReader newIn,
+            final PrintWriter newOut) {
         if (commandHandler != null) {
             commandHandler.pause();
         }
@@ -80,23 +174,26 @@ public class PushAdmin {
         in = newIn;
         out = newOut;
         for (int i = 0; i < displays.size(); i++) {
-            sendMessage("DisplayConnected" + PushServer.GRAVE_SEPARATOR + displays.get(i).getIConsume());
+            sendMessage(Constants.DISPLAY_CONNECTED + PushServer.GRAVE_SEPARATOR + displays.get(i).getIConsume());
         }
         commandHandler = new CommandHandler();
         timer = new Timer();
         new Thread(commandHandler).start();
-        timer.schedule(new PauseTask(), heartbeatTime * 1000);
+        timer.schedule(new PauseTask(), heartbeatTimeSeconds * 1000);
     }
     
+    /**
+     * Update group questions.
+     */
     public void updateGroupQuestions() {
         final Iterator<String> gcIter = groupQuestions.keySet().iterator();
         while (gcIter.hasNext()) {
             final String gcNext = gcIter.next();
-            if (!groups.containsKey(gcNext)) {
+            if (!groupMap.containsKey(gcNext)) {
                 gcIter.remove();
             }
         }
-        final Iterator<String> gIter = groups.keySet().iterator();
+        final Iterator<String> gIter = groupMap.keySet().iterator();
         while (gIter.hasNext()) {
             final String gNext = gIter.next();
             if (!groupQuestions.containsKey(gNext)) {
@@ -105,78 +202,130 @@ public class PushAdmin {
         }
     }
     
+    /**
+     * Process client.
+     * 
+     * @param clientSocket
+     *            the client socket
+     * @param clientId
+     *            the client id
+     * @param clientMac
+     *            the client mac
+     * @param clientIn
+     *            the client in
+     * @param clientOut
+     *            the client out
+     * @param groupName
+     *            the group name
+     */
     public void processClient(final Socket clientSocket,
-            final String clientID,
-            final String clientMAC,
+            final String clientId,
+            final String clientMac,
             final BufferedReader clientIn,
             final PrintWriter clientOut,
             final String groupName) {
         System.out.println("in process client");
-        if (clients.containsKey(clientID)) {
-            final Client oldClient = clients.get(clientID);
-            if (oldClient.getMacAddress().equals(clientMAC)) {
+        if (clientMap.containsKey(clientId)) {
+            final Client oldClient = clientMap.get(clientId);
+            if (oldClient.getMacAddress().equals(clientMac)) {
                 try {
                     oldClient.getSocket().close();
                 } catch (final IOException e) {
                 }
                 
                 oldClient.clientReconnected(clientSocket, clientIn, clientOut);
-                final String oldGroup = oldClient.getGroup();
-                if (oldGroup.equals("")) {
+                final String oldGroupName = oldClient.getGroup();
+                if (oldGroupName.equals("")) {
                     if (!questionForEveryone.equals("")) {
                         oldClient.startQuestion(questionForEveryone);
                     }
                 } else {
-                    oldClient.setGroup(oldGroup);
-                    if (!groupQuestions.get(oldGroup).equals("")) {
-                        oldClient.startQuestion(groupQuestions.get(oldGroup));
+                    oldClient.setGroup(oldGroupName);
+                    if (!groupQuestions.get(oldGroupName).equals("")) {
+                        oldClient.startQuestion(groupQuestions.get(oldGroupName));
                     } else if (!questionForEveryone.equals("")) {
                         oldClient.startQuestion(questionForEveryone);
                     }
                 }
             } else {
-                sendMessage("DuplicateID");
+                sendMessage(Constants.DUPLICATE_ID);
                 try {
                     clientSocket.close();
                 } catch (final IOException e) {
                 }
             }
         } else {
-            clients.put(clientID, new Client(clientID, clientMAC, clientSocket, clientIn, clientOut, this));
-            if (!groupName.equals("Ungrouped")) {
-                if (groups.containsKey(groupName)) {
-                    groups.get(groupName).add(clientID);
+            clientMap.put(clientId, new Client(clientId,
+                    clientMac,
+                    clientSocket,
+                    clientIn,
+                    clientOut,
+                    this));
+            if (!groupName.equals(Constants.UNGROUPED)) {
+                if (groupMap.containsKey(groupName)) {
+                    groupMap.get(groupName).add(clientId);
                     System.out.println("Added person to existing group: " + groupName);
                 } else {
                     final ArrayList<String> newGroupList = new ArrayList<String>();
-                    newGroupList.add(clientID);
-                    groups.put(groupName, newGroupList);
+                    newGroupList.add(clientId);
+                    groupMap.put(groupName, newGroupList);
                     groupQuestions.put(groupName, "");
                     System.out.println("Added person to new group: " + groupName);
                 }
-                clients.get(clientID).setGroup(groupName);
-                final Iterator<String> groupIter = groups.keySet().iterator();
-                String groupUpdate = "GroupList" + PushServer.GRAVE_SEPARATOR;
+                clientMap.get(clientId).setGroup(groupName);
+                final Iterator<String> groupIter = groupMap.keySet().iterator();
+                String groupUpdate = Constants.GROUP_LIST + PushServer.GRAVE_SEPARATOR;
                 while (groupIter.hasNext()) {
                     groupUpdate += groupIter.next() + PushServer.SEMI_COLON_SEPARATOR;
                 }
                 out.println(groupUpdate);
             }
         }
-        System.out.println("Client connected to admin " + ID + " with an id of " + clientID);
+        System.out.println("Client connected to admin " + adminId + " with an id of " + clientId);
         // out.println("ClientConnected;" + clientID);
     }
     
-    public void processDisplay(final Socket display, final BufferedReader displayIn, final PrintWriter displayOut) {
-        final Display newDisplay = new Display(displays.size() - 1, display, displayIn, displayOut, this);
+    /**
+     * Process display.
+     * 
+     * @param displaySocket
+     *            the display
+     * @param displayIn
+     *            the display in
+     * @param displayOut
+     *            the display out
+     * @param displayName
+     *            the display name
+     */
+    public void processDisplay(final Socket displaySocket,
+            final BufferedReader displayIn,
+            final PrintWriter displayOut,
+            final String displayName) {
+        final Display newDisplay = new Display(displays.size() - 1,
+                displaySocket,
+                displayIn,
+                displayOut,
+                this,
+                displayName);
         displays.add(newDisplay);
-        sendMessage("DisplayConnected" + PushServer.GRAVE_SEPARATOR + newDisplay.getIConsume());
+        sendMessage(Constants.DISPLAY_CONNECTED + PushServer.GRAVE_SEPARATOR + newDisplay.getIConsume());
     }
     
-    public String getID() {
-        return ID;
+    /**
+     * Gets the admin id.
+     * 
+     * @return the admin id
+     */
+    public String getAdminId() {
+        return adminId;
     }
     
+    /**
+     * Update answer.
+     * 
+     * @param clientAndAnswer
+     *            the client and answer
+     */
     public synchronized void updateAnswer(final String clientAndAnswer) {
         for (int i = 0; i < displays.size(); i++) {
             displays.get(i).sendMessage(clientAndAnswer);
@@ -185,12 +334,25 @@ public class PushAdmin {
         sendMessage(clientAndAnswer);
     }
     
+    /**
+     * Checks if is paused.
+     * 
+     * @return true, if is paused
+     */
     public boolean isPaused() {
         return commandHandler.isPaused();
     }
     
+    /**
+     * The Class PauseTask.
+     */
     private class PauseTask extends TimerTask {
         
+        /*
+         * (non-Javadoc)
+         * 
+         * @see java.util.TimerTask#run()
+         */
         @Override
         public void run() {
             commandHandler.pause();
@@ -198,10 +360,20 @@ public class PushAdmin {
         }
     }
     
+    /**
+     * The Class CommandHandler.
+     */
     private class CommandHandler implements Runnable {
         
+        
+        /** The paused. */
         private boolean paused = false;
         
+        /*
+         * (non-Javadoc)
+         * 
+         * @see java.lang.Runnable#run()
+         */
         @Override
         public void run() {
             while (!paused) {
@@ -212,66 +384,66 @@ public class PushAdmin {
                     if (command == null) {
                         paused = true;
                         System.out.println("Read null, pausing admin now");
-                    } else if (command.equals("AreYouStillThere")) {
+                    } else if (command.equals(Constants.CLIENT_HEARTBEAT_REQUEST)) {
                         timer.cancel();
                         timer = new Timer();
-                        timer.schedule(new PauseTask(), heartbeatTime * 1000);
-                        sendMessage("YesImHere");
+                        timer.schedule(new PauseTask(), heartbeatTimeSeconds * 1000);
+                        sendMessage(Constants.SERVER_HEARTBEAT_RESPONSE);
                         System.out.println("Received admin heartbeat and reset timer");
                     } else {
                         System.out.println(command);
                         final String[] directiveParts = command.split(PushServer.GRAVE_SEPARATOR);
-                        if (directiveParts[0].equals("ClientCommand")) {
-                            final String[] ccParts = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
-                            final String[] commandParts = ccParts[0].split(PushServer.SEMI_COLON_SEPARATOR);
-                            if (commandParts[0].equals("Open") || commandParts[0].equals("OpenClickPad")) {
+                        if (directiveParts[0].equals(Constants.CLIENT_COMMAND)) {
+                            final String[] clientCommandParts = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
+                            final String[] commandParts = clientCommandParts[0].split(PushServer.SEMI_COLON_SEPARATOR);
+                            if (commandParts[0].equals(Constants.OPEN) || commandParts[0].equals(Constants.OPEN_CLICK_PAD)) {
                                 System.out.println("Got the command to open a question");
-                                String displayGString = "";
-                                final String[] groupsToOpen = ccParts[2].split(PushServer.COMMA_SEPARATOR);
+                                String displayGroupString = "";
+                                final String[] groupsToOpen = clientCommandParts[2].split(PushServer.COMMA_SEPARATOR);
                                 
-                                if ((groupsToOpen.length == 1) && groupsToOpen[0].equals("Everyone")) {
-                                    final Iterator<Map.Entry<String, Client>> iter = clients.entrySet().iterator();
-                                    while (iter.hasNext()) {
-                                        iter.next().getValue().startQuestion(ccParts[0]);
+                                if ((groupsToOpen.length == 1) && groupsToOpen[0].equals(Constants.EVERYONE)) {
+                                    final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
+                                    while (clientMapIterator.hasNext()) {
+                                        clientMapIterator.next().getValue().startQuestion(clientCommandParts[0]);
                                     }
-                                    displayGString = "Everyone" + PushServer.COLON_SEPARATOR + clients.size() + PushServer.COMMA_SEPARATOR;
-                                    questionForEveryone = ccParts[0];
+                                    displayGroupString = Constants.EVERYONE + PushServer.COLON_SEPARATOR + clientMap.size() + PushServer.COMMA_SEPARATOR;
+                                    questionForEveryone = clientCommandParts[0];
                                 } else {
                                     for (final String gName : groupsToOpen) {
-                                        final ArrayList<String> groupList = groups.get(gName);
-                                        groupQuestions.put(gName, ccParts[0]);
-                                        displayGString += gName + PushServer.COLON_SEPARATOR + groupList.size() + PushServer.COMMA_SEPARATOR;
+                                        final ArrayList<String> groupList = groupMap.get(gName);
+                                        groupQuestions.put(gName, clientCommandParts[0]);
+                                        displayGroupString += gName + PushServer.COLON_SEPARATOR + groupList.size() + PushServer.COMMA_SEPARATOR;
                                         for (int j = 0; j < groupList.size(); j++) {
-                                            clients.get(groupList.get(j)).startQuestion(ccParts[0]);
+                                            clientMap.get(groupList.get(j)).startQuestion(clientCommandParts[0]);
                                         }
                                     }
                                 }
                                 for (int i = 0; i < displays.size(); i++) {
-                                    displays.get(i).sendMessage(ccParts[0] + PushServer.AMPERSAND_SEPARATOR + ccParts[1] + PushServer.AMPERSAND_SEPARATOR + displayGString);
+                                    displays.get(i).sendMessage(clientCommandParts[0] + PushServer.AMPERSAND_SEPARATOR + clientCommandParts[1] + PushServer.AMPERSAND_SEPARATOR + displayGroupString);
                                 }
-                            } else if (commandParts[0].equals("Close")) {
+                            } else if (commandParts[0].equals(Constants.CLOSE)) {
                                 for (int i = 0; i < displays.size(); i++) {
                                     displays.get(i).sendMessage(directiveParts[1]);
                                 }
                                 final String[] groupsToClose = commandParts[1].split(PushServer.COMMA_SEPARATOR);
-                                if ((groupsToClose.length == 1) && groupsToClose[0].equals("Everyone")) {
+                                if ((groupsToClose.length == 1) && groupsToClose[0].equals(Constants.EVERYONE)) {
                                     questionForEveryone = "";
-                                    final Iterator<Map.Entry<String, Client>> iter = clients.entrySet().iterator();
-                                    while (iter.hasNext()) {
-                                        iter.next().getValue().stopQuestion();
+                                    final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
+                                    while (clientMapIterator.hasNext()) {
+                                        clientMapIterator.next().getValue().stopQuestion();
                                     }
                                 } else {
-                                    for (final String gName : groupsToClose) {
-                                        final ArrayList<String> groupList = groups.get(gName);
-                                        groupQuestions.put(gName, "");
+                                    for (final String groupName : groupsToClose) {
+                                        final ArrayList<String> groupList = groupMap.get(groupName);
+                                        groupQuestions.put(groupName, "");
                                         // check 304
                                         for (int j = 0; j < groupList.size(); j++) {
-                                            clients.get(groupList.get(j)).stopQuestion();
+                                            clientMap.get(groupList.get(j)).stopQuestion();
                                         }
                                     }
                                 }
                             }
-                        } else if (directiveParts[0].equals("GetQuestionSets")) {
+                        } else if (directiveParts[0].equals(Constants.GET_QUESTION_SETS)) {
                             System.out.println("Got request for sets");
                             /*
                              * try { ResultSet results = server.runQuery(
@@ -285,13 +457,13 @@ public class PushAdmin {
                              * {e.printStackTrace();}
                              */
                             out.println(server.getQuestionSets());
-                        } else if (directiveParts[0].equals("AddQuestionSet")) {
+                        } else if (directiveParts[0].equals(Constants.ADD_QUESTION_SET)) {
                             server.addQuestionSet(directiveParts[1], directiveParts[2]);
-                        } else if (directiveParts[0].equals("DeleteQuestionSet")) {
+                        } else if (directiveParts[0].equals(Constants.DELETE_QUESTION_SET)) {
                             if (directiveParts.length > 1) {
                                 server.deleteQuestionSet(directiveParts[1]);
                             }
-                        } else if (directiveParts[0].equals("GetAllQuestions")) {
+                        } else if (directiveParts[0].equals(Constants.GET_ALL_QUESTIONS)) {
                             System.out.println("Got request for all from set");
                             /*
                              * try { ResultSet results = server.runQuery(
@@ -307,13 +479,13 @@ public class PushAdmin {
                              * {e.printStackTrace();}
                              */
                             out.println(server.getQuestionsInSet(directiveParts[1]));
-                        } else if (directiveParts[0].equals("GetClientList")) {
-                            final Iterator<String> iter = groups.keySet().iterator();
+                        } else if (directiveParts[0].equals(Constants.GET_CLIENT_LIST)) {
+                            final Iterator<String> iter = groupMap.keySet().iterator();
                             String output = "";
                             while (iter.hasNext()) {
                                 final String groupName = iter.next();
                                 output = output + groupName + PushServer.SEMI_COLON_SEPARATOR;
-                                final ArrayList<String> groupMembers = groups.get(groupName);
+                                final ArrayList<String> groupMembers = groupMap.get(groupName);
                                 for (int i = 0; i < groupMembers.size(); i++) {
                                     if (i != 0) {
                                         output = output + PushServer.COMMA_SEPARATOR;
@@ -322,29 +494,29 @@ public class PushAdmin {
                                 }
                                 output = output + PushServer.AMPERSAND_SEPARATOR;
                             }
-                            final Iterator<Map.Entry<String, Client>> cIter = clients.entrySet().iterator();
-                            String notGrouped = "Not grouped" + PushServer.SEMI_COLON_SEPARATOR;
-                            while (cIter.hasNext()) {
-                                final Map.Entry<String, Client> next = cIter.next();
+                            final Iterator<Map.Entry<String, Client>> clientIterator = clientMap.entrySet().iterator();
+                            String notGrouped = Constants.NOT_GROUPED + PushServer.SEMI_COLON_SEPARATOR;
+                            while (clientIterator.hasNext()) {
+                                final Map.Entry<String, Client> next = clientIterator.next();
                                 if (next.getValue().getGroup().equals("")) {
                                     notGrouped += next.getKey() + PushServer.SEMI_COLON_SEPARATOR;
                                 }
                             }
                             notGrouped += PushServer.AMPERSAND_SEPARATOR;
-                            output = "ClientList" + PushServer.GRAVE_SEPARATOR + notGrouped + output;
+                            output = Constants.CLIENT_LIST + PushServer.GRAVE_SEPARATOR + notGrouped + output;
                             output = output.substring(0, output.length() - 3);
                             System.out.println("Returning: " + output);
                             sendMessage(output);
-                        } else if (directiveParts[0].equals("UpdateClientList")) {
-                            groups.clear();
+                        } else if (directiveParts[0].equals(Constants.UPDATE_CLIENT_LIST)) {
+                            groupMap.clear();
                             final String[] groupStrings = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
                             for (final String groupString : groupStrings) {
                                 final String[] groupParts = groupString.split(PushServer.SEMI_COLON_SEPARATOR);
-                                if (groupParts[0].equals("Not grouped")) {
+                                if (groupParts[0].equals(Constants.NOT_GROUPED)) {
                                     if (groupParts.length > 1) {
                                         final String[] nogroupClients = groupParts[1].split(PushServer.COMMA_SEPARATOR);
                                         for (final String nogroupClient : nogroupClients) {
-                                            clients.get(nogroupClient).unsetGroup();
+                                            clientMap.get(nogroupClient).unsetGroup();
                                         }
                                     }
                                 } else {
@@ -353,10 +525,10 @@ public class PushAdmin {
                                         final String[] newMembers = groupParts[1].split(PushServer.COMMA_SEPARATOR);
                                         Collections.addAll(newGroupListing, newMembers);
                                         for (final String newMember : newMembers) {
-                                            clients.get(newMember).setGroup(groupParts[0]);
+                                            clientMap.get(newMember).setGroup(groupParts[0]);
                                         }
                                     }
-                                    groups.put(groupParts[0], newGroupListing);
+                                    groupMap.put(groupParts[0], newGroupListing);
                                 }
                             }
                             updateGroupQuestions();
@@ -383,17 +555,28 @@ public class PushAdmin {
             adminSocket = null;
         }
         
+        /**
+         * Unpause.
+         */
         public void unpause() {
             paused = false;
             System.out.println("Admin just got unpaused " + System.currentTimeMillis());
         }
         
+        /**
+         * Pause.
+         */
         public void pause() {
             paused = true;
             timer.cancel();
             System.out.println("Just paused admin " + System.currentTimeMillis());
         }
         
+        /**
+         * Checks if is paused.
+         * 
+         * @return true, if is paused
+         */
         public boolean isPaused() {
             return paused;
         }

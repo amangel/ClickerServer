@@ -1,62 +1,125 @@
+// TODO: Auto-generated Javadoc
+/**
+ * The Class Question.
+ */
 public class Question {
     
-    private final String ID;
-    private String flags;
-    private String widgets;
-    private String followUp;
-    private String color;
-    private final String originalString;
     
+    /** The question ID. */
+    private final String questionId;
+    
+    /** The flags that are set on the question. */
+    private String questionFlags;
+    
+    /** The set of widgets in the question. */
+    private String widgets;
+    
+    /** The follow up question id if it is set for a question. */
+    private String followUp;
+    
+    /** The background color string for the question if it is different than the default. */
+    private String backgroundColor;
+    
+    /** The original string. */
+    private final String originalQuestionString;
+    
+    /**
+     * Instantiates a new question.
+     * 
+     * @param questionString
+     *            the question string
+     */
     public Question(final String questionString) {
-        originalString = questionString;
-        final String[] parts = questionString.split(PushServer.SEMI_COLON_SEPARATOR);
-        ID = parts[0];
-        if (parts.length > 1) {
-            flags = parts[1];
-            widgets = parts[2];
+        originalQuestionString = questionString;
+        final String[] questionParts = questionString.split(PushServer.SEMI_COLON_SEPARATOR);
+        questionId = questionParts[0];
+        if (questionParts.length > 1) {
+            questionFlags = questionParts[1];
+            widgets = questionParts[2];
             try {
-                color = parts[3];
+                backgroundColor = questionParts[3];
             } catch (final ArrayIndexOutOfBoundsException e) {
-                color = "";
+                backgroundColor = "";
             }
         } else {
-            flags = "";
+            questionFlags = "";
             widgets = "";
-            color = "";
+            backgroundColor = "";
         }
-        followUp = "Close";
+        followUp = Constants.CLOSE;
     }
     
-    public String getID() {
-        return ID;
+    /**
+     * Gets the question ID.
+     * 
+     * @return the ID
+     */
+    public String getQuestionId() {
+        return questionId;
     }
     
-    public String getFlags() {
-        return flags;
+    /**
+     * Gets the question flags.
+     * 
+     * @return the flags
+     */
+    public String getQuestionFlags() {
+        return questionFlags;
     }
     
+    /**
+     * Gets the widgets.
+     * 
+     * @return the widgets
+     */
     public String getWidgets() {
         return widgets;
     }
     
-    public String getColor() {
-        return color;
+    /**
+     * Gets the color.
+     * 
+     * @return the color
+     */
+    public String getBackgroundColor() {
+        return backgroundColor;
     }
     
+    /**
+     * Gets the follow up.
+     * 
+     * @return the follow up
+     */
     public String getFollowUp() {
         return followUp;
     }
     
+    /**
+     * Checks to see if the question has a follow up.
+     * 
+     * @return true, if successful
+     */
     public boolean hasFollowUp() {
-        return followUp.equals("Close");
+        return followUp.equals(Constants.CLOSE);
     }
     
+    /**
+     * Sets the follow up.
+     * 
+     * @param followID
+     *            the new follow up
+     */
     public void setFollowUp(final String followID) {
         followUp = followID;
     }
     
+    /**
+     * Gets the original question string.
+     * 
+     * @return the question string
+     */
     public String getQuestionString() {
-        return originalString;
+        return originalQuestionString;
     }
     
 }

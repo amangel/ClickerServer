@@ -8,38 +8,78 @@ import java.io.InterruptedIOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-//import java.sql.Connection;
-//import java.sql.ResultSet;
-//import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
 
+import javax.sql.ConnectionEvent;
+
+// TODO: Auto-generated Javadoc
+/**
+ * The Class PushServer.
+ */
 public class PushServer {
     
-    private final ConnectionListener connChecker;
-    private final AdminListener adminHandler;
-    private final DisplayListener displayHandler;
+
+
+    /** Listens for incoming client connections. */
+    private final ClientConnectionListener clientConnectionChecker;
+    
+    /** Handles new admin connections. */
+    private final AdminListener adminListener;
+    
+    /** Handles new display connections. */
+    private final DisplayListener displayListener;
+    
+    /** Map of the connected administrators. */
     private final Map<String, PushAdmin> admins;
+    
+    /** The question sets. <br>
+     * Map of QuestionSetName to an ArrayList of Questions */
     private final Map<String, ArrayList<String>> questionSets;
+    
+    /** The questions. */
     private final Map<String, Question> questions;
+    
+    /** The server socket. */
     private ServerSocket serverSocket;
     
-//    private Connection connect;
-//    private Statement clientStatement;
-//    private ResultSet clientResultSet;
-//    private Statement adminStatement;
-//    private ResultSet adminResultSet;
+    // private Connection connect;
+    // private Statement clientStatement;
+    // private ResultSet clientResultSet;
+    // private Statement adminStatement;
+    // private ResultSet adminResultSet;
     
+    /** Delimiter */
     public static String SEMI_COLON_SEPARATOR = "`/;";
-    public static String COLON_SEPARATOR = "`/:";
-    public static String GRAVE_SEPARATOR = "`/`";
-    public static String AMPERSAND_SEPARATOR = "`/&";
-    public static String AT_SEPARATOR = "`/@";
-    public static String COMMA_SEPARATOR = "`/,";
     
+    /** Delimiter */
+    public static String COLON_SEPARATOR = "`/:";
+    
+    /** Delimiter */
+    public static String GRAVE_SEPARATOR = "`/`";
+    
+    /** Delimiter */
+    public static String AMPERSAND_SEPARATOR = "`/&";
+    
+    /** Delimiter */
+    public static String AT_SEPARATOR = "`/@";
+    
+    /** Delimiter */
+    public static String COMMA_SEPARATOR = "`/,";
+
+    /**
+     * Instantiates a new push server.
+     * 
+     * @param clientPort
+     *            the client port
+     * @param adminPort
+     *            the admin port
+     * @param displayPort
+     *            the display port
+     */
     public PushServer(final int clientPort, final int adminPort, final int displayPort) {
         try {
             serverSocket = new ServerSocket(clientPort);
@@ -49,12 +89,12 @@ public class PushServer {
         }
         admins = Collections.synchronizedMap(new HashMap<String, PushAdmin>(50));
         admins.put("frederis", new PushAdmin("frederis", this));
-        adminHandler = new AdminListener(adminPort);
-        new Thread(adminHandler).start();
-        connChecker = new ConnectionListener();
-        new Thread(connChecker).start();
-        displayHandler = new DisplayListener(displayPort);
-        new Thread(displayHandler).start();
+        adminListener = new AdminListener(adminPort);
+        new Thread(adminListener).start();
+        clientConnectionChecker = new ClientConnectionListener();
+        new Thread(clientConnectionChecker).start();
+        displayListener = new DisplayListener(displayPort);
+        new Thread(displayListener).start();
         
         questions = Collections.synchronizedMap(new HashMap<String, Question>());
         questionSets = Collections.synchronizedMap(new HashMap<String, ArrayList<String>>());
@@ -66,15 +106,18 @@ public class PushServer {
         // adminStatement = null;
         // adminResultSet = null;
         
-        loadQuestions();
+        loadQuestionsFromFile();
     }
     
-    private void loadQuestions() {
+    /**
+     * Load questions from the questions/questions.txt file one line at a time.
+     */
+    private void loadQuestionsFromFile() {
         try {
             final BufferedReader qIn = new BufferedReader(new FileReader("questions/questions.txt"));
             String str;
             while ((str = qIn.readLine()) != null) {
-                readQuestionSet(str);
+                parseQuestionSet(str);
             }
             qIn.close();
         } catch (final IOException e) {
@@ -82,7 +125,13 @@ public class PushServer {
         }
     }
     
-    private void readQuestionSet(final String setString) {
+    /**
+     * Parse question sets from each line of the questions/questions.txt file.
+     * 
+     * @param setString
+     *            the set string
+     */
+    private void parseQuestionSet(final String setString) {
         System.out.println("reading a question set");
         System.out.println(setString);
         final String[] setParts = setString.split(AT_SEPARATOR);
@@ -92,13 +141,13 @@ public class PushServer {
             if (!setParts[1].equals("")) {
                 final String[] setQuestions = setParts[1].split(AMPERSAND_SEPARATOR);
                 Question newQuestion = new Question(setQuestions[0]);
-                String previous = newQuestion.getID();
+                String previous = newQuestion.getQuestionId();
                 questions.put(previous, newQuestion);
                 questionList.add(previous);
                 if (setQuestions.length > 1) {
                     for (int i = 1; i < setQuestions.length; i++) {
                         newQuestion = new Question(setQuestions[i]);
-                        final String newID = newQuestion.getID();
+                        final String newID = newQuestion.getQuestionId();
                         questions.get(previous).setFollowUp(newID);
                         questions.put(newID, newQuestion);
                         questionList.add(newID);
@@ -111,20 +160,37 @@ public class PushServer {
         questionSets.put(setParts[0], questionList);
     }
     
+    /**
+     * Adds the question set.
+     * 
+     * @param oldName
+     *            the old name
+     * @param qSetString
+     *            the question set string
+     */
     public void addQuestionSet(final String oldName, final String qSetString) {
         if (!oldName.equals("")) {
             questionSets.remove(oldName);
         }
-        readQuestionSet(qSetString);
-        saveQuestionSets();
+        parseQuestionSet(qSetString);
+        saveQuestionSetsToFile();
     }
     
-    public void deleteQuestionSet(final String oldName) {
-        questionSets.remove(oldName);
-        saveQuestionSets();
+    /**
+     * Delete question set.
+     * 
+     * @param questionSet
+     *            the old name
+     */
+    public void deleteQuestionSet(final String questionSet) {
+        questionSets.remove(questionSet);
+        saveQuestionSetsToFile();
     }
     
-    public void saveQuestionSets() {
+    /**
+     * Save question sets.
+     */
+    public void saveQuestionSetsToFile() {
         try {
             final BufferedWriter fOutput = new BufferedWriter(new FileWriter("questions/questions.txt"));
             final Iterator<String> qsIter = questionSets.keySet().iterator();
@@ -139,7 +205,6 @@ public class PushServer {
                     }
                 }
                 fOutput.write(qsLine + "\n");
-                fOutput.flush();
             }
             fOutput.close();
         } catch (final IOException e) {
@@ -162,75 +227,111 @@ public class PushServer {
      * {e.printStackTrace();} return null; }
      */
     
+    /**
+     * Gets the push server.
+     * 
+     * @return the push server
+     */
     public PushServer getPushServer() {
         return this;
     }
     
+    /**
+     * Gets the question sets.
+     * 
+     * @return the question sets
+     */
     public String getQuestionSets() {
-        final Iterator<String> qSetIter = questionSets.keySet().iterator();
+        final Iterator<String> questionSetItererator = questionSets.keySet().iterator();
         final String[] resultArray = new String[questionSets.size()];
         String finalResult = "";
-        int i = 0;
-        while (qSetIter.hasNext()) {
-            resultArray[i] = qSetIter.next();
-            i++;
+        int index = 0;
+        while (questionSetItererator.hasNext()) {
+            resultArray[index] = questionSetItererator.next();
+            index++;
             // finalResult = finalResult + qSetIter.next() +
             // AMPERSAND_SEPARATOR;
         }
         java.util.Arrays.sort(resultArray);
-        for (final String qString : resultArray) {
-            finalResult = finalResult + qString + AMPERSAND_SEPARATOR;
+        for (final String questionString : resultArray) {
+            finalResult = finalResult + questionString + AMPERSAND_SEPARATOR;
         }
-        return "AllSets" + GRAVE_SEPARATOR + finalResult;
+        return Constants.ALL_SETS + GRAVE_SEPARATOR + finalResult;
     }
     
-    public String getQuestionsInSet(final String qSetKey) {
-        System.out.println("Getting questions for set: " + qSetKey);
-        final ArrayList<String> setQs = questionSets.get(qSetKey);
+    /**
+     * Gets the questions in set.
+     * 
+     * @param questionSetKey
+     *            the q set key
+     * @return the questions in set
+     */
+    public String getQuestionsInSet(final String questionSetKey) {
+        System.out.println("Getting questions for set: " + questionSetKey);
+        final ArrayList<String> setQuestions = questionSets.get(questionSetKey);
         String finalResult = "";
-        for (int i = 0; i < setQs.size(); i++) {
+        for (int i = 0; i < setQuestions.size(); i++) {
             System.out.println("In a loop");
-            final Question next = questions.get(setQs.get(i));
-            finalResult = finalResult + next.getID() + SEMI_COLON_SEPARATOR + next.getFlags() + SEMI_COLON_SEPARATOR + next.getWidgets() + SEMI_COLON_SEPARATOR + next.getColor() + AMPERSAND_SEPARATOR;
+            final Question nextQuestion = questions.get(setQuestions.get(i));
+            finalResult = finalResult + nextQuestion.getQuestionId() + SEMI_COLON_SEPARATOR + 
+                    nextQuestion.getQuestionFlags() + SEMI_COLON_SEPARATOR + nextQuestion.getWidgets() + 
+                    SEMI_COLON_SEPARATOR + nextQuestion.getBackgroundColor() + AMPERSAND_SEPARATOR;
         }
         System.out.println("Finalresult: " + finalResult);
-        return "QuestionSet" + GRAVE_SEPARATOR + finalResult;
+        return Constants.QUESTION_SET + GRAVE_SEPARATOR + finalResult;
     }
     
-    private class ConnectionListener implements Runnable {
+    /**
+     *  This class listens for incoming client connections.
+     *  It runs as a thread and accepts and processes new connections, 
+     *  waiting for a new connection as soon as the old connection has been processed.
+     * 
+     * @see ConnectionEvent
+     */
+    private class ClientConnectionListener implements Runnable {
         
+
+
+        /*
+         * (non-Javadoc)
+         * 
+         * @see java.lang.Runnable#run()
+         */
         @Override
         public void run() {
             System.out.println("Listening for clients now on PushServer");
             while (true) {
                 try {
                     final Socket client = serverSocket.accept();
+                    System.out.println("accepted a client connection");
                     client.setKeepAlive(true);
                     client.setSoTimeout(100);
                     final BufferedReader in = new BufferedReader(new InputStreamReader(client.getInputStream()));
                     final PrintWriter out = new PrintWriter(client.getOutputStream(), true);
                     String idString = "";
-                    boolean idset = false;
-                    while (!idset) {
+                    boolean isIdSet = false;
+                    while (!isIdSet) {
                         try {
                             idString = in.readLine();
-                            idset = true;
+                            System.out.println("id is set");
+                            isIdSet = true;
                         } catch (final InterruptedIOException e) {
                         }
                     }
                     final String[] idparts = idString.split(SEMI_COLON_SEPARATOR);
                     if (idparts.length == 3) {
-                        final String cid = idparts[0];
-                        final String cmac = idparts[1];
+                        System.out.println("length is 3");
+                        final String clientId = idparts[0];
+                        final String clientMac = idparts[1];
                         final String[] adminParts = idparts[2].split(COMMA_SEPARATOR);
                         final String adminID = adminParts[0];
                         final String groupID = adminParts[1];
                         System.out.println("Client is wanting to connect to admin: " + adminID);
                         if (admins.containsKey(adminID)) {
                             System.out.println("Calling processClient");
-                            admins.get(adminID).processClient(client, cid, cmac, in, out, groupID);
+                            admins.get(adminID).processClient(client, clientId, clientMac, in, out, groupID);
                         } else {
-                            out.println("InvalidAdmin");
+                            out.println(Constants.INVALID_ADMIN);
                             client.close();
                         }
                     } else if (idparts.length == 4) {
@@ -249,7 +350,9 @@ public class PushServer {
                          * {e.printStackTrace();}
                          */
                         final Question requested = questions.get(idparts[3]);
-                        out.println("Open" + SEMI_COLON_SEPARATOR + idparts[3] + SEMI_COLON_SEPARATOR + requested.getFlags() + SEMI_COLON_SEPARATOR + requested.getWidgets() + SEMI_COLON_SEPARATOR + requested.getColor());
+                        out.println(Constants.OPEN + SEMI_COLON_SEPARATOR + idparts[3] + SEMI_COLON_SEPARATOR + 
+                                requested.getQuestionFlags() + SEMI_COLON_SEPARATOR + requested.getWidgets() + 
+                                SEMI_COLON_SEPARATOR + requested.getBackgroundColor());
                     } else if (idparts.length == 5) {
                         /*
                          * System.out.println("Processing response now"); try {
@@ -275,10 +378,12 @@ public class PushServer {
                         final Question previous = questions.get(idparts[3]);
                         if (previous.hasFollowUp()) {
                             final Question next = questions.get(previous.getFollowUp());
-                            out.println("Open" + SEMI_COLON_SEPARATOR + next.getID() + SEMI_COLON_SEPARATOR + next.getFlags() + SEMI_COLON_SEPARATOR + next.getWidgets() + SEMI_COLON_SEPARATOR + next.getColor());
+                            out.println(Constants.OPEN + SEMI_COLON_SEPARATOR + next.getQuestionId() + 
+                                    SEMI_COLON_SEPARATOR + next.getQuestionFlags() + SEMI_COLON_SEPARATOR + 
+                                    next.getWidgets() + SEMI_COLON_SEPARATOR + next.getBackgroundColor());
                             
                         } else {
-                            out.println("Close" + SEMI_COLON_SEPARATOR);
+                            out.println(Constants.CLOSE + SEMI_COLON_SEPARATOR);
                         }
                     } else {
                         // invalid
@@ -289,10 +394,26 @@ public class PushServer {
         }
     }
     
+    /**
+     * This class listens for incoming administrator connections.
+     * If there is no instance of an administrator that has previously connected, 
+     * it will create a new administrator.
+     * If the admin is reconnecting, it simply updates the old PushAdmin object 
+     * with the new connection.
+     * 
+     * @see AdminEvent
+     */
     private class AdminListener implements Runnable {
         
+        /** The connection socket. */
         private ServerSocket connectionSocket;
         
+        /**
+         * Instantiates a new admin listener.
+         * 
+         * @param port
+         *            the port
+         */
         public AdminListener(final int port) {
             try {
                 connectionSocket = new ServerSocket(port);
@@ -301,6 +422,11 @@ public class PushServer {
             }
         }
         
+        /*
+         * (non-Javadoc)
+         * 
+         * @see java.lang.Runnable#run()
+         */
         @Override
         public void run() {
             while (true) {
@@ -342,23 +468,35 @@ public class PushServer {
                  */
                 if (userName.equals("frederis") && password.equals("testpw")) {
                     if (admins.containsKey(userName)) {
-                        System.out.println("Already have admin key " + System.currentTimeMillis());
+                        System.out.println("Already have admin key ");
                         final PushAdmin oldAdmin = admins.get(userName);
-                        System.out.println("Calling admin reconnected " + System.currentTimeMillis());
-                        oldAdmin.adminReconnected(adminSocket, adminIn, adminOut);
+                        System.out.println("Calling admin reconnected ");
+                        oldAdmin.reconnectAdmin(adminSocket, adminIn, adminOut);
                     } else {
                         admins.put(userName, new PushAdmin(userName, getPushServer()));
-                        admins.get(userName).adminConnected(adminSocket, adminIn, adminOut);
+                        admins.get(userName).connectAdmin(adminSocket, adminIn, adminOut);
                     }
                 }
             }
         }
     }
     
+    /**
+     * This class listens for new connections coming in on the display's port.
+     * 
+     * @see DisplayEvent
+     */
     private class DisplayListener implements Runnable {
         
+        /** The display socket. */
         private ServerSocket displaySocket;
         
+        /**
+         * Instantiates a new display listener.
+         * 
+         * @param port
+         *            the port
+         */
         public DisplayListener(final int port) {
             try {
                 displaySocket = new ServerSocket(port);
@@ -367,6 +505,11 @@ public class PushServer {
             }
         }
         
+        /*
+         * (non-Javadoc)
+         * 
+         * @see java.lang.Runnable#run()
+         */
         @Override
         public void run() {
             while (true) {
@@ -377,12 +520,19 @@ public class PushServer {
                     display.setSoTimeout(100);
                     final BufferedReader displayIn = new BufferedReader(new InputStreamReader(display.getInputStream()));
                     final PrintWriter displayOut = new PrintWriter(display.getOutputStream(), true);
-                    final String requestedAdmin = displayIn.readLine();
+                    final String adminAndName = displayIn.readLine();
+                    // final String requestedAdmin = displayIn.readLine();
+                    final String[] adminAndNameParts = adminAndName.split(COMMA_SEPARATOR);
+                    final String requestedAdmin = adminAndNameParts[0];
+                    final String displayName = adminAndNameParts[1];
                     if (admins.containsKey(requestedAdmin)) {
-                        admins.get(requestedAdmin).processDisplay(display, displayIn, displayOut);
+                        admins.get(requestedAdmin).processDisplay(display,
+                                displayIn,
+                                displayOut,
+                                displayName);
                     } else {
                         admins.put(requestedAdmin, new PushAdmin(requestedAdmin, getPushServer()));
-                        System.out.println("Display connected and waiting for admin on "+requestedAdmin);
+                        System.out.println("Display connected and waiting for admin on " + requestedAdmin);
                     }
                 } catch (final IOException e) {
                 }

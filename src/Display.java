@@ -1,32 +1,53 @@
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InterruptedIOException;
 import java.io.PrintWriter;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 
+// TODO: Auto-generated Javadoc
+/**
+ * The Class Display.
+ */
 public class Display {
     
-    private final int ID;
-    private final Socket socket;
-    private final BufferedReader in;
-    private final PrintWriter out;
-    private String iConsume;
-    private final PushAdmin admin;
     
-    public Display(final int id, final Socket socket, final BufferedReader in, final PrintWriter out, final PushAdmin admin) {
-        ID = id;
-        this.socket = socket;
-        this.in = in;
+    
+    /** The out. */
+    private final PrintWriter out;
+    
+    /** The i consume. */
+    private String iConsume;
+    
+    /**
+     * Instantiates a new display.
+     * 
+     * @param id
+     *            the id
+     * @param socket
+     *            the socket
+     * @param in
+     *            the in
+     * @param out
+     *            the out
+     * @param admin
+     *            the admin
+     * @param name
+     *            the name
+     */
+    public Display(final int id,
+            final Socket socket,
+            final BufferedReader in,
+            final PrintWriter out,
+            final PushAdmin admin,
+            final String name) {
         this.out = out;
-        this.admin = admin;
         boolean ctRead = false;
         while (!ctRead) {
             try {
                 final String consumeInfo = in.readLine();
                 ctRead = true;
                 final String[] consumeParts = consumeInfo.split(PushServer.SEMI_COLON_SEPARATOR);
-                if (consumeParts[0].equals("IConsume")) {
+                if (consumeParts[0].equals(Constants.I_CONSUME)) {
                     iConsume = consumeParts[1];
                 } else {
                     System.out.println("Read in: " + consumeParts[0] + " instead of IConsume");
@@ -42,41 +63,23 @@ public class Display {
         }
     }
     
+    /**
+     * Send message.
+     * 
+     * @param msg
+     *            the msg
+     */
     public void sendMessage(final String msg) {
         out.println(msg);
+        out.flush();
     }
     
+    /**
+     * Gets the i consume.
+     * 
+     * @return the i consume
+     */
     public String getIConsume() {
         return iConsume;
     }
-    
-    private class DCChecker implements Runnable {
-        
-        private final String openMessage;
-        private final boolean open;
-        
-        public DCChecker(final String openMessage) {
-            this.openMessage = openMessage;
-            open = true;
-        }
-        
-        @Override
-        public void run() {
-            while (true) {
-                try {
-                    final String response = in.readLine();
-                    if (response == null) {
-                        admin.displayDied(ID);
-                        break;
-                    }
-                } catch (final InterruptedIOException e) {
-                } catch (final IOException e) {
-                    admin.displayDied(ID);
-                    break;
-                }
-            }
-            
-        }
-    }
-    
 }
