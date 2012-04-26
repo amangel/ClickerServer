@@ -11,7 +11,8 @@ import java.net.SocketTimeoutException;
 public class Display {
     
     
-    
+
+    private static final int heartbeatTime = 32;
     /** The out. */
     private final PrintWriter out;
     

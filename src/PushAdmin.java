@@ -226,63 +226,96 @@ public class PushAdmin {
             final String groupName) {
         System.out.println("in process client");
         if (clientMap.containsKey(clientId)) {
-            final Client oldClient = clientMap.get(clientId);
-            if (oldClient.getMacAddress().equals(clientMac)) {
-                try {
-                    oldClient.getSocket().close();
-                } catch (final IOException e) {
-                }
-                
-                oldClient.clientReconnected(clientSocket, clientIn, clientOut);
-                final String oldGroupName = oldClient.getGroup();
-                if (oldGroupName.equals("")) {
-                    if (!questionForEveryone.equals("")) {
-                        oldClient.startQuestion(questionForEveryone);
-                    }
-                } else {
-                    oldClient.setGroup(oldGroupName);
-                    if (!groupQuestions.get(oldGroupName).equals("")) {
-                        oldClient.startQuestion(groupQuestions.get(oldGroupName));
-                    } else if (!questionForEveryone.equals("")) {
-                        oldClient.startQuestion(questionForEveryone);
-                    }
-                }
-            } else {
-                sendMessage(Constants.DUPLICATE_ID);
-                try {
-                    clientSocket.close();
-                } catch (final IOException e) {
-                }
-            }
-        } else {
-            clientMap.put(clientId, new Client(clientId,
+            handleExistingClientConnectingToServer(clientSocket,
+                    clientId,
                     clientMac,
-                    clientSocket,
+                    clientIn,
+                    clientOut);
+        } else {
+            handleNewClientConnection(clientSocket,
+                    clientId,
+                    clientMac,
                     clientIn,
                     clientOut,
-                    this));
-            if (!groupName.equals(Constants.UNGROUPED)) {
-                if (groupMap.containsKey(groupName)) {
-                    groupMap.get(groupName).add(clientId);
-                    System.out.println("Added person to existing group: " + groupName);
-                } else {
-                    final ArrayList<String> newGroupList = new ArrayList<String>();
-                    newGroupList.add(clientId);
-                    groupMap.put(groupName, newGroupList);
-                    groupQuestions.put(groupName, "");
-                    System.out.println("Added person to new group: " + groupName);
-                }
-                clientMap.get(clientId).setGroup(groupName);
-                final Iterator<String> groupIter = groupMap.keySet().iterator();
-                String groupUpdate = Constants.GROUP_LIST + PushServer.GRAVE_SEPARATOR;
-                while (groupIter.hasNext()) {
-                    groupUpdate += groupIter.next() + PushServer.SEMI_COLON_SEPARATOR;
-                }
-                out.println(groupUpdate);
-            }
+                    groupName);
         }
         System.out.println("Client connected to admin " + adminId + " with an id of " + clientId);
         // out.println("ClientConnected;" + clientID);
+    }
+
+    private void handleNewClientConnection(final Socket clientSocket,
+            final String clientId,
+            final String clientMac,
+            final BufferedReader clientIn,
+            final PrintWriter clientOut,
+            final String groupName) {
+        clientMap.put(clientId, new Client(clientId,
+                clientMac,
+                clientSocket,
+                clientIn,
+                clientOut,
+                this));
+        if (!groupName.equals(Constants.UNGROUPED)) {
+            if (groupMap.containsKey(groupName)) {
+                groupMap.get(groupName).add(clientId);
+                System.out.println("Added person to existing group: " + groupName);
+            } else {
+                final ArrayList<String> newGroupList = new ArrayList<String>();
+                newGroupList.add(clientId);
+                groupMap.put(groupName, newGroupList);
+                groupQuestions.put(groupName, "");
+                System.out.println("Added person to new group: " + groupName);
+            }
+            clientMap.get(clientId).setGroup(groupName);
+            final Iterator<String> groupIter = groupMap.keySet().iterator();
+            String groupUpdate = Constants.GROUP_LIST + PushServer.GRAVE_SEPARATOR;
+            while (groupIter.hasNext()) {
+                groupUpdate += groupIter.next() + PushServer.SEMI_COLON_SEPARATOR;
+            }
+            out.println(groupUpdate);
+        }
+    }
+
+    private void handleExistingClientConnectingToServer(final Socket clientSocket,
+            final String clientId,
+            final String clientMac,
+            final BufferedReader clientIn,
+            final PrintWriter clientOut) {
+        final Client oldClient = clientMap.get(clientId);
+        if (oldClient.getMacAddress().equals(clientMac)) {
+            handleExistingClientWithMatchingMac(clientSocket, clientIn, clientOut, oldClient);
+        } else {
+            sendMessage(Constants.DUPLICATE_ID);
+            try {
+                clientSocket.close();
+            } catch (final IOException e) {
+            }
+        }
+    }
+
+    private void handleExistingClientWithMatchingMac(final Socket clientSocket,
+            final BufferedReader clientIn,
+            final PrintWriter clientOut,
+            final Client oldClient) {
+        try {
+            oldClient.getSocket().close();
+        } catch (final IOException e) {
+        }
+        
+        oldClient.clientReconnected(clientSocket, clientIn, clientOut);
+        final String oldGroupName = oldClient.getGroup();
+        if (oldGroupName.equals("")) {
+            if (!questionForEveryone.equals("")) {
+                oldClient.startQuestion(questionForEveryone);
+            }
+        } else {
+            oldClient.setGroup(oldGroupName);
+            if (!groupQuestions.get(oldGroupName).equals("")) {
+                oldClient.startQuestion(groupQuestions.get(oldGroupName));
+            } else if (!questionForEveryone.equals("")) {
+                oldClient.startQuestion(questionForEveryone);
+            }
+        }
     }
     
     /**
@@ -385,153 +418,24 @@ public class PushAdmin {
                         paused = true;
                         System.out.println("Read null, pausing admin now");
                     } else if (command.equals(Constants.CLIENT_HEARTBEAT_REQUEST)) {
-                        timer.cancel();
-                        timer = new Timer();
-                        timer.schedule(new PauseTask(), heartbeatTimeSeconds * 1000);
-                        sendMessage(Constants.SERVER_HEARTBEAT_RESPONSE);
-                        System.out.println("Received admin heartbeat and reset timer");
+                        handleHeartbeatRequest();
                     } else {
                         System.out.println(command);
                         final String[] directiveParts = command.split(PushServer.GRAVE_SEPARATOR);
                         if (directiveParts[0].equals(Constants.CLIENT_COMMAND)) {
-                            final String[] clientCommandParts = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
-                            final String[] commandParts = clientCommandParts[0].split(PushServer.SEMI_COLON_SEPARATOR);
-                            if (commandParts[0].equals(Constants.OPEN) || commandParts[0].equals(Constants.OPEN_CLICK_PAD)) {
-                                System.out.println("Got the command to open a question");
-                                String displayGroupString = "";
-                                final String[] groupsToOpen = clientCommandParts[2].split(PushServer.COMMA_SEPARATOR);
-                                
-                                if ((groupsToOpen.length == 1) && groupsToOpen[0].equals(Constants.EVERYONE)) {
-                                    final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
-                                    while (clientMapIterator.hasNext()) {
-                                        clientMapIterator.next().getValue().startQuestion(clientCommandParts[0]);
-                                    }
-                                    displayGroupString = Constants.EVERYONE + PushServer.COLON_SEPARATOR + clientMap.size() + PushServer.COMMA_SEPARATOR;
-                                    questionForEveryone = clientCommandParts[0];
-                                } else {
-                                    for (final String gName : groupsToOpen) {
-                                        final ArrayList<String> groupList = groupMap.get(gName);
-                                        groupQuestions.put(gName, clientCommandParts[0]);
-                                        displayGroupString += gName + PushServer.COLON_SEPARATOR + groupList.size() + PushServer.COMMA_SEPARATOR;
-                                        for (int j = 0; j < groupList.size(); j++) {
-                                            clientMap.get(groupList.get(j)).startQuestion(clientCommandParts[0]);
-                                        }
-                                    }
-                                }
-                                for (int i = 0; i < displays.size(); i++) {
-                                    displays.get(i).sendMessage(clientCommandParts[0] + PushServer.AMPERSAND_SEPARATOR + clientCommandParts[1] + PushServer.AMPERSAND_SEPARATOR + displayGroupString);
-                                }
-                            } else if (commandParts[0].equals(Constants.CLOSE)) {
-                                for (int i = 0; i < displays.size(); i++) {
-                                    displays.get(i).sendMessage(directiveParts[1]);
-                                }
-                                final String[] groupsToClose = commandParts[1].split(PushServer.COMMA_SEPARATOR);
-                                if ((groupsToClose.length == 1) && groupsToClose[0].equals(Constants.EVERYONE)) {
-                                    questionForEveryone = "";
-                                    final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
-                                    while (clientMapIterator.hasNext()) {
-                                        clientMapIterator.next().getValue().stopQuestion();
-                                    }
-                                } else {
-                                    for (final String groupName : groupsToClose) {
-                                        final ArrayList<String> groupList = groupMap.get(groupName);
-                                        groupQuestions.put(groupName, "");
-                                        // check 304
-                                        for (int j = 0; j < groupList.size(); j++) {
-                                            clientMap.get(groupList.get(j)).stopQuestion();
-                                        }
-                                    }
-                                }
-                            }
+                            handleClientCommand(directiveParts);
                         } else if (directiveParts[0].equals(Constants.GET_QUESTION_SETS)) {
-                            System.out.println("Got request for sets");
-                            /*
-                             * try { ResultSet results = server.runQuery(
-                             * "SELECT DISTINCT idkey FROM questions WHERE admin='"
-                             * +ID+"'"); String finalResult = ""; while
-                             * (results.next()) { finalResult = finalResult +
-                             * results.getString("idkey") + "&"; }
-                             * out.println("AllSets`" + finalResult);
-                             * System.out.println("Responding with: " +
-                             * finalResult); } catch (Exception e)
-                             * {e.printStackTrace();}
-                             */
-                            out.println(server.getQuestionSets());
+                            handleGetQuestionSet();
                         } else if (directiveParts[0].equals(Constants.ADD_QUESTION_SET)) {
-                            server.addQuestionSet(directiveParts[1], directiveParts[2]);
+                            handleAddQuestionSet(directiveParts);
                         } else if (directiveParts[0].equals(Constants.DELETE_QUESTION_SET)) {
-                            if (directiveParts.length > 1) {
-                                server.deleteQuestionSet(directiveParts[1]);
-                            }
+                            handleDeleteQuestionSet(directiveParts);
                         } else if (directiveParts[0].equals(Constants.GET_ALL_QUESTIONS)) {
-                            System.out.println("Got request for all from set");
-                            /*
-                             * try { ResultSet results = server.runQuery(
-                             * "SELECT * FROM questions WHERE idkey='"
-                             * +directiveParts[1]+"'  AND admin='"+ID+"'");
-                             * String finalResult = ""; while (results.next()) {
-                             * String qString = results.getString("questionid")
-                             * + ";" + results.getString("questionstring");
-                             * finalResult = finalResult + qString + "&"; }
-                             * out.println("QuestionSet`" + finalResult);
-                             * System.out.println("Responding with: " +
-                             * finalResult); } catch (Exception e)
-                             * {e.printStackTrace();}
-                             */
-                            out.println(server.getQuestionsInSet(directiveParts[1]));
+                            handleGetAllQuestions(directiveParts);
                         } else if (directiveParts[0].equals(Constants.GET_CLIENT_LIST)) {
-                            final Iterator<String> iter = groupMap.keySet().iterator();
-                            String output = "";
-                            while (iter.hasNext()) {
-                                final String groupName = iter.next();
-                                output = output + groupName + PushServer.SEMI_COLON_SEPARATOR;
-                                final ArrayList<String> groupMembers = groupMap.get(groupName);
-                                for (int i = 0; i < groupMembers.size(); i++) {
-                                    if (i != 0) {
-                                        output = output + PushServer.COMMA_SEPARATOR;
-                                    }
-                                    output = output + groupMembers.get(i);
-                                }
-                                output = output + PushServer.AMPERSAND_SEPARATOR;
-                            }
-                            final Iterator<Map.Entry<String, Client>> clientIterator = clientMap.entrySet().iterator();
-                            String notGrouped = Constants.NOT_GROUPED + PushServer.SEMI_COLON_SEPARATOR;
-                            while (clientIterator.hasNext()) {
-                                final Map.Entry<String, Client> next = clientIterator.next();
-                                if (next.getValue().getGroup().equals("")) {
-                                    notGrouped += next.getKey() + PushServer.SEMI_COLON_SEPARATOR;
-                                }
-                            }
-                            notGrouped += PushServer.AMPERSAND_SEPARATOR;
-                            output = Constants.CLIENT_LIST + PushServer.GRAVE_SEPARATOR + notGrouped + output;
-                            output = output.substring(0, output.length() - 3);
-                            System.out.println("Returning: " + output);
-                            sendMessage(output);
+                            handleGetClientList();
                         } else if (directiveParts[0].equals(Constants.UPDATE_CLIENT_LIST)) {
-                            groupMap.clear();
-                            final String[] groupStrings = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
-                            for (final String groupString : groupStrings) {
-                                final String[] groupParts = groupString.split(PushServer.SEMI_COLON_SEPARATOR);
-                                if (groupParts[0].equals(Constants.NOT_GROUPED)) {
-                                    if (groupParts.length > 1) {
-                                        final String[] nogroupClients = groupParts[1].split(PushServer.COMMA_SEPARATOR);
-                                        for (final String nogroupClient : nogroupClients) {
-                                            clientMap.get(nogroupClient).unsetGroup();
-                                        }
-                                    }
-                                } else {
-                                    final ArrayList<String> newGroupListing = new ArrayList<String>();
-                                    if (groupParts.length > 1) {
-                                        final String[] newMembers = groupParts[1].split(PushServer.COMMA_SEPARATOR);
-                                        Collections.addAll(newGroupListing, newMembers);
-                                        for (final String newMember : newMembers) {
-                                            clientMap.get(newMember).setGroup(groupParts[0]);
-                                        }
-                                    }
-                                    groupMap.put(groupParts[0], newGroupListing);
-                                }
-                            }
-                            updateGroupQuestions();
+                            handleUpdateClientList(directiveParts);
                         } else {
                             System.out.println("Invalid command: " + command);
                         }
@@ -553,6 +457,175 @@ public class PushAdmin {
             }
             timer.cancel();
             adminSocket = null;
+        }
+
+        private void handleClientCommand(final String[] directiveParts) {
+            final String[] clientCommandParts = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
+            final String[] commandParts = clientCommandParts[0].split(PushServer.SEMI_COLON_SEPARATOR);
+            if (commandParts[0].equals(Constants.OPEN) || commandParts[0].equals(Constants.OPEN_CLICK_PAD)) {
+                handleOpenCommand(clientCommandParts);
+            } else if (commandParts[0].equals(Constants.CLOSE)) {
+                handleCloseCommand(directiveParts, commandParts);
+            }
+        }
+
+        private void handleCloseCommand(final String[] directiveParts, final String[] commandParts) {
+            for (int i = 0; i < displays.size(); i++) {
+                displays.get(i).sendMessage(directiveParts[1]);
+            }
+            final String[] groupsToClose = commandParts[1].split(PushServer.COMMA_SEPARATOR);
+            if ((groupsToClose.length == 1) && groupsToClose[0].equals(Constants.EVERYONE)) {
+                questionForEveryone = "";
+                final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
+                while (clientMapIterator.hasNext()) {
+                    clientMapIterator.next().getValue().stopQuestion();
+                }
+            } else {
+                for (final String groupName : groupsToClose) {
+                    final ArrayList<String> groupList = groupMap.get(groupName);
+                    groupQuestions.put(groupName, "");
+                    // check 304
+                    for (int j = 0; j < groupList.size(); j++) {
+                        clientMap.get(groupList.get(j)).stopQuestion();
+                    }
+                }
+            }
+        }
+
+        private void handleOpenCommand(final String[] clientCommandParts) {
+            System.out.println("Got the command to open a question");
+            String displayGroupString = "";
+            final String[] groupsToOpen = clientCommandParts[2].split(PushServer.COMMA_SEPARATOR);
+            
+            if ((groupsToOpen.length == 1) && groupsToOpen[0].equals(Constants.EVERYONE)) {
+                final Iterator<Map.Entry<String, Client>> clientMapIterator = clientMap.entrySet().iterator();
+                while (clientMapIterator.hasNext()) {
+                    clientMapIterator.next().getValue().startQuestion(clientCommandParts[0]);
+                }
+                displayGroupString = Constants.EVERYONE + PushServer.COLON_SEPARATOR + clientMap.size() + PushServer.COMMA_SEPARATOR;
+                questionForEveryone = clientCommandParts[0];
+            } else {
+                for (final String gName : groupsToOpen) {
+                    final ArrayList<String> groupList = groupMap.get(gName);
+                    groupQuestions.put(gName, clientCommandParts[0]);
+                    displayGroupString += gName + PushServer.COLON_SEPARATOR + groupList.size() + PushServer.COMMA_SEPARATOR;
+                    for (int j = 0; j < groupList.size(); j++) {
+                        clientMap.get(groupList.get(j)).startQuestion(clientCommandParts[0]);
+                    }
+                }
+            }
+            for (int i = 0; i < displays.size(); i++) {
+                displays.get(i).sendMessage(clientCommandParts[0] + PushServer.AMPERSAND_SEPARATOR + clientCommandParts[1] + PushServer.AMPERSAND_SEPARATOR + displayGroupString);
+            }
+        }
+
+        private void handleHeartbeatRequest() {
+            timer.cancel();
+            timer = new Timer();
+            timer.schedule(new PauseTask(), heartbeatTimeSeconds * 1000);
+            sendMessage(Constants.SERVER_HEARTBEAT_RESPONSE);
+            System.out.println("Received admin heartbeat and reset timer");
+        }
+
+        private void handleGetQuestionSet() {
+            System.out.println("Got request for sets");
+            /*
+             * try { ResultSet results = server.runQuery(
+             * "SELECT DISTINCT idkey FROM questions WHERE admin='"
+             * +ID+"'"); String finalResult = ""; while
+             * (results.next()) { finalResult = finalResult +
+             * results.getString("idkey") + "&"; }
+             * out.println("AllSets`" + finalResult);
+             * System.out.println("Responding with: " +
+             * finalResult); } catch (Exception e)
+             * {e.printStackTrace();}
+             */
+            out.println(server.getQuestionSets());
+        }
+
+        private void handleAddQuestionSet(final String[] directiveParts) {
+            server.addQuestionSet(directiveParts[1], directiveParts[2]);
+        }
+
+        private void handleDeleteQuestionSet(final String[] directiveParts) {
+            if (directiveParts.length > 1) {
+                server.deleteQuestionSet(directiveParts[1]);
+            }
+        }
+
+        private void handleGetAllQuestions(final String[] directiveParts) {
+            System.out.println("Got request for all from set");
+            /*
+             * try { ResultSet results = server.runQuery(
+             * "SELECT * FROM questions WHERE idkey='"
+             * +directiveParts[1]+"'  AND admin='"+ID+"'");
+             * String finalResult = ""; while (results.next()) {
+             * String qString = results.getString("questionid")
+             * + ";" + results.getString("questionstring");
+             * finalResult = finalResult + qString + "&"; }
+             * out.println("QuestionSet`" + finalResult);
+             * System.out.println("Responding with: " +
+             * finalResult); } catch (Exception e)
+             * {e.printStackTrace();}
+             */
+            out.println(server.getQuestionsInSet(directiveParts[1]));
+        }
+
+        private void handleGetClientList() {
+            final Iterator<String> iter = groupMap.keySet().iterator();
+            String output = "";
+            while (iter.hasNext()) {
+                final String groupName = iter.next();
+                output = output + groupName + PushServer.SEMI_COLON_SEPARATOR;
+                final ArrayList<String> groupMembers = groupMap.get(groupName);
+                for (int i = 0; i < groupMembers.size(); i++) {
+                    if (i != 0) {
+                        output = output + PushServer.COMMA_SEPARATOR;
+                    }
+                    output = output + groupMembers.get(i);
+                }
+                output = output + PushServer.AMPERSAND_SEPARATOR;
+            }
+            final Iterator<Map.Entry<String, Client>> clientIterator = clientMap.entrySet().iterator();
+            String notGrouped = Constants.NOT_GROUPED + PushServer.SEMI_COLON_SEPARATOR;
+            while (clientIterator.hasNext()) {
+                final Map.Entry<String, Client> next = clientIterator.next();
+                if (next.getValue().getGroup().equals("")) {
+                    notGrouped += next.getKey() + PushServer.SEMI_COLON_SEPARATOR;
+                }
+            }
+            notGrouped += PushServer.AMPERSAND_SEPARATOR;
+            output = Constants.CLIENT_LIST + PushServer.GRAVE_SEPARATOR + notGrouped + output;
+            output = output.substring(0, output.length() - 3);
+            System.out.println("Returning: " + output);
+            sendMessage(output);
+        }
+
+        private void handleUpdateClientList(final String[] directiveParts) {
+            groupMap.clear();
+            final String[] groupStrings = directiveParts[1].split(PushServer.AMPERSAND_SEPARATOR);
+            for (final String groupString : groupStrings) {
+                final String[] groupParts = groupString.split(PushServer.SEMI_COLON_SEPARATOR);
+                if (groupParts[0].equals(Constants.NOT_GROUPED)) {
+                    if (groupParts.length > 1) {
+                        final String[] nogroupClients = groupParts[1].split(PushServer.COMMA_SEPARATOR);
+                        for (final String nogroupClient : nogroupClients) {
+                            clientMap.get(nogroupClient).unsetGroup();
+                        }
+                    }
+                } else {
+                    final ArrayList<String> newGroupListing = new ArrayList<String>();
+                    if (groupParts.length > 1) {
+                        final String[] newMembers = groupParts[1].split(PushServer.COMMA_SEPARATOR);
+                        Collections.addAll(newGroupListing, newMembers);
+                        for (final String newMember : newMembers) {
+                            clientMap.get(newMember).setGroup(groupParts[0]);
+                        }
+                    }
+                    groupMap.put(groupParts[0], newGroupListing);
+                }
+            }
+            updateGroupQuestions();
         }
         
         /**
