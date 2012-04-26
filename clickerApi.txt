@@ -1,0 +1,106 @@
+Client to Server
+	AreYouStillThere			- heartbeat request
+	Initial login:
+		Push: <userName>`/;<MAC>`/;<admin name>`/,<group name> - if no group name, uses 'ungrouped'
+		Pull: <userName>`/;<MAC>`/;<admin name>`/;<question number>
+	Pull mode:
+		<userName>`/;<MAC Address>`/;<admin name>`/;<question number>`/;<answer values>
+	Push mode:
+		AreYouStillThere			- heartbeat request
+		<group>`/;<question number>`/;<answer values>			- sending answers
+			<answer values>: answer1`/,answer2`/,answer3
+	
+	
+Server to Client
+	YesImHere					- heartbeat response
+	Open`/;<question number>`/;<flags if any, single space otherwise>`/;<widget parameters>`/;<color string, same format as for setColor>
+		If a color is not specified, the default color will be used instead
+	OpenClickPad`/;<question number>`/;<flags if any, single space otherwise>`/;<widget parameters>`/;<color string, same format as for setColor>
+		If a color is not specified, the default color will be used instead
+	Close`/;
+	System`/;
+		System`/;Remove`/;<number of widget to remove
+		System`/;COLOR`/;<color as #ffffff as a string>
+		System`/;GROUP`/;<group name>
+	InvalidResponse`/;
+	InvalidAdmin`/;
+	InvalidInformation`/;
+	
+Current Server to Client flags:
+	flag format:
+		Flag1`/,Flag2`/,Flag3
+		
+	Existing flags:
+		P 		- Sends a push question that requires clients to manually hit the submit button, allows to 'push out a pull mode question'
+		e       - Notifies the client that the question is bound for 'everyone'. Forces client to respond using the 'everyone' group instead of their normal group
+
+Widget formats:
+	Button:
+		B`/:<label>`/:<default state>  	-default state is 0 for off, 1 for on
+	Toggle Button:
+		TOG`/:<label>`/:<default state>  	-default state is 0 for off, 1 for on
+	Slider:
+		SLIDE`/:<label>`/:<min value>`/:<max value>`/:<default value>
+	Combo Box:
+		COMBO`/:<label>`/:<options list>`/:<default index to choose>
+			<options list> : option1`/~option2`/~option3`/~option4
+	TextBox:
+		TEXTBOX`/:<label>`/:<default text>      - cannot be an empty string, needs to have at least 1 character
+	TextQuestion:
+		TEXTQ`/:<label>`/:<default text>        - default text cannot be empty
+	TextView
+		TEXTVIEW`/:<label>
+	QRText
+		QRTEXT`/:<label>`/:<default value>
+	TextViewWithSubmitButton
+		TVBUTTON`/:<label>
+		
+=================================================================================
+Admin to Server
+AreYouStillThere			- heartbeat request
+ClientCommand`/`
+	ClientCommand`/`<question to open>`/&`/&<groupsToSend>
+		where questionToOpen is the question as formatted above
+		groupsToSend: group1`/,group2`/,group3
+	ClientCommand`/`Close`/;<groups>
+		where <groups>: group1`/,group2`/,group3
+			for example:
+				ClientCommand`/`Close`/;Everyone`/,
+	UpdateClientList`/`<group,children sets>
+		<group,children sets>: group1`/;child1`/,child2`/,child3`/&group2`/;child1`/,child2`/,child3
+GetClientList`/`
+GetQuestionSets`/`
+GetAllQuestions`/`
+AddQuestionSet`/`<setName>`/`<question string>
+DeleteQuestionSet`/`<setName>
+
+Server to Admin
+YesImHere					- heartbeat response
+AllSets`/`<question sets>
+	<question sets>:  questionset1`/&questionset2`/&questionset3
+
+QuestionSet`/`<set of questions>
+
+ClientList`/`<client list>
+
+GroupList`/`<group list>
+	<group list>: group1`/;group2`/;group3
+DisplayConnected`/`<display consumptions>
+	<display consumptions> : display1`/,display2`/,display3
+	
+
+===========================================================================
+IMP to server
+initial login:
+	<admin name>`/,<imp name>
+	
+	IConsume`/;<consumptions>
+		<consumptions>: consumption1`/,consumption2`/,consumption3
+
+Server to IMP
+	Open`/;				LineGraph`/:Avg`/:2
+		Open`/;ID`/;Flags`/;Widgets`/&<plugin list>
+			<plugin list>: pluginname1`/:type`/:param`/;pluginname2`/:type`/:param
+	OpenClickPad`/;
+	Close`/;<groups>
+		<groups> : group1`/,group2`/,group3
